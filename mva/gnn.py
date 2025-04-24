@@ -29,7 +29,7 @@ class SimpleGNN(nn.Module):
             GraphNorm(128),
             nn.ReLU()
         )
-        self.linear = nn.Linear(128 + global_features, 2)
+        self.linear = nn.Linear(128 + global_features, 1)
 
     def forward(self, x, edge_index, batch, u):
         # First layer
@@ -51,5 +51,7 @@ class SimpleGNN(nn.Module):
         x_pool = global_mean_pool(x, batch)
         x_cat = torch.cat([x_pool, u], dim=1)
         out = self.linear(x_cat)
+        
+        #out = torch.sigmoid(out) # Uncomment if using BCELoss instead of BCEWithLogitsLoss
         return out
     

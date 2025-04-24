@@ -76,11 +76,8 @@ from mva.gnn import SimpleGNN
 model = SimpleGNN(in_channels=14, global_features=3)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 # BCEWithLogitsLoss expects targets as float, and we include pos_weight to weight positives (LLP class)
-#criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], dtype=torch.float))
+criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], dtype=torch.float))
 #criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([1.0], dtype=torch.float))
-
-# Cross entropy loss with weight
-criterion = nn.CrossEntropyLoss(weight=torch.tensor([1.0, pos_weight], dtype=torch.float))
 
 ########################################
 # 3) Training loop
@@ -95,9 +92,8 @@ for epoch in range(num_epochs):
         optimizer.zero_grad()
         # Forward pass including batch_i.u
         out = model(batch_i.x, batch_i.edge_index, batch_i.batch, batch_i.u)
-        # For BCEWithLogitsLoss, targets should be float values (0.0 or 1.0)
         # Reshape to (batch_i_size, 1) to match out shape
-        y = batch_i.y.long().view(-1)
+        y = batch_i.y.view(-1, 1).float()
         loss = criterion(out, y)
         loss.backward()
         optimizer.step()
@@ -129,7 +125,8 @@ all_labels = []
 with torch.no_grad():
     for batch in test_loader:
         out = model(batch.x, batch.edge_index, batch.batch, batch.u)
-        preds = out.argmax(dim=1).cpu().numpy()
+        # If <= 0.0, classify as photon gun (0), else LLP (1) (using BCEWithLogitsLoss)
+        preds = (out > 0.0).float().cpu().numpy()
         labels = batch.y.long().view(-1).cpu().numpy()
         
         all_preds.extend(preds)
@@ -146,6 +143,6 @@ plt.tight_layout()
 plt.savefig(f"{cwd}/plots/training/confusion_matrix.png")
 
 # Draw the first five clusters from each dataset
-for i in range(5):
-    dataset_photon_gun.plot_data_3d(i, plot_dir=f"{cwd}/plots/training/photon_gun", draw_edges=True)
-    dataset_llp_ctau_1000.plot_data_3d(i, plot_dir=f"{cwd}/plots/training/llp_ctau_1000", draw_edges=True)
+#for i in range(5):
+#    dataset_photon_gun.plot_data_3d(i, plot_dir=f"{cwd}/plots/training/photon_gun", draw_edges=True)
+#    dataset_llp_ctau_1000.plot_data_3d(i, plot_dir=f"{cwd}/plots/training/llp_ctau_1000", draw_edges=True)
