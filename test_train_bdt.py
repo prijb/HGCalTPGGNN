@@ -162,12 +162,18 @@ if model.do_eval:
     # ROC curve
     from sklearn.metrics import roc_curve, auc
     fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba[:, 1])
+    # Get the FPR and TPR for the y_pred 
+    fpr_pred, tpr_pred, thresholds_pred = roc_curve(y_test, y_pred)
+    fpr_05 = fpr_pred[thresholds_pred == 1]
+    tpr_05 = tpr_pred[thresholds_pred == 1]
     roc_auc = auc(fpr, tpr)
     fig, ax = plt.subplots()
     ax.plot(fpr, tpr, label=f'ROC curve (area = {roc_auc:.2f})')
+    ax.plot(fpr_05, tpr_05, 'ro', label='Threshold = 0.5')
     ax.plot([0, 1], [0, 1], 'k--')
     ax.set_xlabel('False Positive Rate')
     ax.set_ylabel('True Positive Rate')
+    ax.legend()
     plt.savefig(f"{cwd}/plots/training/roc_curve_bdt.png")
 
 

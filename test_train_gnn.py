@@ -158,6 +158,7 @@ plt.savefig(f"{cwd}/plots/training/training_loss_curve_gnn.png")
 ########################################
 model.eval()
 eval_losses = []
+all_outs = []
 all_preds = []
 all_labels = []
 
@@ -168,6 +169,9 @@ with torch.no_grad():
         preds = (out > 0.0).float().cpu().numpy()
         labels = batch.y.long().view(-1).cpu().numpy()
         
+        # Apply sigmod to get probabilities
+        out = torch.sigmoid(out)
+        all_outs.extend(out.cpu().numpy())
         all_preds.extend(preds)
         all_labels.extend(labels)
 
@@ -186,13 +190,19 @@ plt.savefig(f"{cwd}/plots/training/confusion_matrix_gnn.png")
 # 7) Draw a ROC curve
 ########################################
 from sklearn.metrics import roc_curve, auc
-fpr, tpr, thresholds = roc_curve(all_labels, all_preds)
+fpr, tpr, thresholds = roc_curve(all_labels, all_outs)
+# Get the FPR and TPR for the prediction threshold (aka all_preds)
+fpr_pred, tpr_pred, thresholds_pred = roc_curve(all_labels, all_preds)
+fpr_05 = fpr_pred[thresholds_pred == 1]
+tpr_05 = tpr_pred[thresholds_pred == 1]
 roc_auc = auc(fpr, tpr)
 fig, ax = plt.subplots()
 ax.plot(fpr, tpr, label=f'ROC curve (area = {roc_auc:.2f})')
+ax.plot(fpr_05, tpr_05, 'ro', label='Threshold = 0.5')
 ax.plot([0, 1], [0, 1], 'k--')
 ax.set_xlabel('False Positive Rate')
 ax.set_ylabel('True Positive Rate')
+ax.legend()
 plt.savefig(f"{cwd}/plots/training/roc_curve_gnn.png")
 
 # Draw the first five clusters from each dataset
