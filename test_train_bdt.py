@@ -1,6 +1,7 @@
 # Train a BDT classifier 
 import os
 import sys
+import numpy as np
 
 # Data loaders
 import torch
@@ -10,6 +11,9 @@ from torch.utils.data import DataLoader, Subset, ConcatDataset
 # Stats
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+
+# Consider just the first 10000 clusters
+n_skim = 10000
 
 # Additional imports
 # Add the project path
@@ -21,14 +25,27 @@ os.makedirs(f"{cwd}/plots/training", exist_ok=True)
 from utils.preprocess import Preprocessor
 from utils.dataset_bdt import BDTDataset
 
-preprocessor_photon_gun = Preprocessor([f"{cwd}/ntuples/photon_gun.root"], cache_dir=f"{cwd}/cache/photon_gun", use_existing_cache=True, batch_size=10000, class_label=0)
-preprocessor_llp_ctau_1000 = Preprocessor([f"{cwd}/ntuples/llp_ctau_1000.root"], cache_dir=f"{cwd}/cache/llp_ctau_1000", use_existing_cache=True, batch_size=10000, class_label=1)
+preprocessor_photon_gun = Preprocessor([f"{cwd}/ntuples/photon_gun.root"], cache_dir=f"{cwd}/cache_full/photon_gun", use_existing_cache=True, batch_size=10000, class_label=0)
+preprocessor_llp_ctau_1000 = Preprocessor([f"{cwd}/ntuples/llp_ctau_1000.root"], cache_dir=f"{cwd}/cache_full/llp_ctau_1000", use_existing_cache=True, batch_size=10000, class_label=1)
 
 preprocessor_photon_gun.cache_files()
 preprocessor_llp_ctau_1000.cache_files()
 
 X_photon_gun, y_photon_gun, w_photon_gun, u_photon_gun = preprocessor_photon_gun.get_data_dict()
 X_llp_ctau_1000, y_llp_ctau_1000, w_llp_ctau_1000, u_llp_ctau_1000 = preprocessor_llp_ctau_1000.get_data_dict()
+
+if len(y_photon_gun) > n_skim:
+    idx = np.arange(n_skim)
+    X_photon_gun = X_photon_gun.loc[idx]
+    y_photon_gun = y_photon_gun.loc[idx]
+    w_photon_gun = w_photon_gun.loc[idx]
+    u_photon_gun = u_photon_gun.loc[idx]
+if len(y_llp_ctau_1000) > n_skim:
+    idx = np.arange(n_skim)
+    X_llp_ctau_1000 = X_llp_ctau_1000.loc[idx]
+    y_llp_ctau_1000 = y_llp_ctau_1000.loc[idx]
+    w_llp_ctau_1000 = w_llp_ctau_1000.loc[idx]
+    u_llp_ctau_1000 = u_llp_ctau_1000.loc[idx]
 
 # Scale up the LLP ctau weights
 w_sum_photon_gun = w_photon_gun.sum()
@@ -56,6 +73,7 @@ pos_weight = (w_sum_photon_gun / w_sum_llp_ctau_1000).values[0]
 # Create the datasets
 dataset_photon_gun = BDTDataset(X_photon_gun, y_photon_gun, w_photon_gun, u_photon_gun, max_tc=20)
 dataset_llp_ctau_1000 = BDTDataset(X_llp_ctau_1000, y_llp_ctau_1000, w_llp_ctau_1000, u_llp_ctau_1000, max_tc=20)
+
 
 # Split the datasets (50/50)
 n_photon_gun = len(dataset_photon_gun)
