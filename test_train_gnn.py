@@ -1,7 +1,6 @@
 # Mix a signal and background class and train a GNN classifier
 import os 
 import sys
-from torch_geometric.loader import DataLoader
 
 # GNN
 import torch
@@ -17,6 +16,9 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 # Add the project path
 cwd = os.getcwd()
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Make plotdir if it doesn't exist
+os.makedirs(f"{cwd}/plots/training", exist_ok=True)
+
 
 from utils.preprocess import Preprocessor
 from utils.dataset_graph import GraphDataset
@@ -107,13 +109,12 @@ for epoch in range(num_epochs):
 ########################################
 # 4) Plot the training loss curve
 ########################################
-plt.figure()
-plt.plot(train_losses, label="Training Loss")
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.title("Training Loss Curve")
-plt.legend()
-plt.savefig(f"{cwd}/plots/training/training_loss_curve.png")
+fig, ax = plt.subplots()
+ax.plot(train_losses, label="Train")
+ax.set_xlabel("Epoch")
+ax.set_ylabel("Loss")
+ax.legend()
+plt.savefig(f"{cwd}/plots/training/training_loss_curve_gnn.png")
 
 ########################################
 # 5) Evaluate on the test set
@@ -140,7 +141,21 @@ disp = ConfusionMatrixDisplay(cm, display_labels=["PhotonGun (0)", "LLP (1)"])
 disp.plot(values_format='d')
 plt.title("Confusion Matrix")
 plt.tight_layout()
-plt.savefig(f"{cwd}/plots/training/confusion_matrix.png")
+plt.savefig(f"{cwd}/plots/training/confusion_matrix_gnn.png")
+
+
+########################################
+# 7) Draw a ROC curve
+########################################
+from sklearn.metrics import roc_curve, auc
+fpr, tpr, thresholds = roc_curve(all_labels, all_preds)
+roc_auc = auc(fpr, tpr)
+fig, ax = plt.subplots()
+ax.plot(fpr, tpr, label=f'ROC curve (area = {roc_auc:.2f})')
+ax.plot([0, 1], [0, 1], 'k--')
+ax.set_xlabel('False Positive Rate')
+ax.set_ylabel('True Positive Rate')
+plt.savefig(f"{cwd}/plots/training/roc_curve_gnn.png")
 
 # Draw the first five clusters from each dataset
 #for i in range(5):
