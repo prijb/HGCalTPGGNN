@@ -66,30 +66,23 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=True)
 print(f"Training on {len(train_dataset)} clusters of which {n_train_photon_gun} are photon gun and {n_train_llp_ctau_1000} are LLP clusters")
 print(f"Scaling up the LLP ctau weights by a factor of {pos_weight:.2f}")
 
-# Example GNN
-########################################
-# 1) Define a binary classification GNN
-########################################
+# GNN training
 from mva.gnn import SimpleGNN
 
-########################################
-# 2) Instantiate model, optimizer, and loss
-########################################
 model = SimpleGNN(in_channels=14, global_features=3)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 # BCEWithLogitsLoss expects targets as float, and we include pos_weight to weight positives (LLP class)
 criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], dtype=torch.float))
 #criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([1.0], dtype=torch.float))
 
-########################################
-# 3) Training loop
-########################################
+# Training
 num_epochs = 10
 train_losses = []
+test_losses = []
 
 for epoch in range(num_epochs):
     model.train()
-    total_loss = 0.0
+    total_loss_train = 0.0
     for batch_i in train_loader:
         optimizer.zero_grad()
         # Forward pass including batch_i.u
@@ -100,17 +93,31 @@ for epoch in range(num_epochs):
         loss.backward()
         optimizer.step()
         
-        total_loss += loss.item() * batch_i.num_graphs
-    
-    total_loss /= len(train_loader.dataset)
-    train_losses.append(total_loss)
-    print(f"Epoch [{epoch+1}/{num_epochs}] - Loss: {total_loss:.4f}")
+        total_loss_train += loss.item() * batch_i.num_graphs
 
-########################################
-# 4) Plot the training loss curve
-########################################
+    # Test loss
+    model.eval()
+    total_loss_test = 0.0
+    with torch.no_grad():
+        for batch_j in test_loader:
+            optimizer.zero_grad()
+            out = model(batch_j.x, batch_j.edge_index, batch_j.batch, batch_j.u)
+            y = batch_j.y.view(-1, 1).float()
+            loss = criterion(out, y)
+            total_loss_test += loss.item() * batch_j.num_graphs
+    
+    total_loss_train /= len(train_loader.dataset)
+    train_losses.append(total_loss_train)
+    total_loss_test /= len(test_loader.dataset)
+    test_losses.append(total_loss_test)
+    #print(f"Epoch [{epoch+1}/{num_epochs}] - Train Loss: {total_loss_train:.4f}")
+    #print(f"Epoch [{epoch+1}/{num_epochs}] - Test Loss: {total_loss_test:.4f}")
+    print(f"Epoch [{epoch+1}/{num_epochs}] - Train Loss: {total_loss_train:.4f} - Test Loss: {total_loss_test:.4f}")
+
+
 fig, ax = plt.subplots()
 ax.plot(train_losses, label="Train")
+ax.plot(test_losses, label="Test")
 ax.set_xlabel("Epoch")
 ax.set_ylabel("Loss")
 ax.legend()
@@ -120,6 +127,7 @@ plt.savefig(f"{cwd}/plots/training/training_loss_curve_gnn.png")
 # 5) Evaluate on the test set
 ########################################
 model.eval()
+eval_losses = []
 all_preds = []
 all_labels = []
 
