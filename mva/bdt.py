@@ -8,6 +8,7 @@ class BDTClassifier:
             self.model = XGBClassifier(
                 subsample=train_params["subsample"],
                 n_estimators=train_params["n_estimators"],
+                gamma=train_params["gamma"],
                 max_depth=train_params["max_depth"],
                 eta=train_params["eta"],
                 reg_lambda=train_params["reg_lambda"],
