@@ -135,9 +135,10 @@ class Preprocessor():
             cl3d = ak.zip(cl3d_dict)
 
             # Filter out entries (jagged, use zipped collections)
-            # TO DO: cl3d_pt > 10 filter
             cl3d_mask = cl3d.pt > 10
             cl3d = cl3d[cl3d_mask]
+
+            # TO DO: Genmatch clusters (either to gen photon, or BSM decay)
 
             # Print memory usage for debugging
             #print_memory_usage(f"Arrays loaded and filtered")
@@ -218,6 +219,7 @@ class Preprocessor():
                 output_path = os.path.join(self.cache_dir, f"file_{i}.pkl")
                 self.cache_file(input_path, output_path)
     
+    """
     # Load the concatenated data from the cache
     def get_data_dict(self):
         X = None
@@ -245,6 +247,50 @@ class Preprocessor():
                     w = pd.concat([w, w_i])
             
         return X, y, w, u
+        """
+    
+    # Load the concatenated data from the cache
+    # FIX: Preserve indices
+    def get_data_dict(self):
+        X_chunks, y_chunks, w_chunks, u_chunks = [], [], [], []
+        next_entry_id = 0
+
+        print(f"Loading data from {self.cache_dir}")
+        for i, file in enumerate(tqdm(os.listdir(self.cache_dir), total=len(os.listdir(self.cache_dir)))):
+            
+            cache_file = os.path.join(self.cache_dir, file)
+            with open(cache_file, "rb") as f:
+                data = pickle.load(f)
+            
+            X_i = data["X"]
+            y_i = data["y"]
+            w_i = data["w"]
+            u_i = data["u"]
+            n_clusters = y_i.shape[0]
+
+            old_entries = X_i.index.levels[0]
+            new_entries = old_entries + next_entry_id
+            X_i = X_i.copy()
+            X_i.index = X_i.index.set_levels(
+                [new_entries, X_i.index.levels[1]],  # [new_entry_ids, same subentry level]
+                level=[0, 1]
+            )
+            y_i = y_i.copy(); y_i.index = y_i.index + next_entry_id
+            w_i = w_i.copy(); w_i.index = w_i.index + next_entry_id
+            u_i = u_i.copy(); u_i.index = u_i.index + next_entry_id
+            next_entry_id += n_clusters
+            
+            X_chunks.append(X_i)
+            y_chunks.append(y_i)
+            w_chunks.append(w_i)
+            u_chunks.append(u_i)
+
+        X = pd.concat(X_chunks)
+        y = pd.concat(y_chunks)
+        w = pd.concat(w_chunks)
+        u = pd.concat(u_chunks)
+        return X, y, w, u
+
 
         
 

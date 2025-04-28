@@ -9,8 +9,18 @@ import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_mean_pool, GraphNorm
 from torch_geometric.loader import DataLoader
 
+import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+
+# Timing
+import time
+start = time.time()
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Consider just the first 10000 clusters
+n_skim = 10000
 
 # Additional imports
 # Add the project path
@@ -31,6 +41,19 @@ preprocessor_llp_ctau_1000.cache_files()
 
 X_photon_gun, y_photon_gun, w_photon_gun, u_photon_gun = preprocessor_photon_gun.get_data_dict()
 X_llp_ctau_1000, y_llp_ctau_1000, w_llp_ctau_1000, u_llp_ctau_1000 = preprocessor_llp_ctau_1000.get_data_dict()
+
+if len(y_photon_gun) > n_skim:
+    idx = np.arange(n_skim)
+    X_photon_gun = X_photon_gun.loc[idx]
+    y_photon_gun = y_photon_gun.loc[idx]
+    w_photon_gun = w_photon_gun.loc[idx]
+    u_photon_gun = u_photon_gun.loc[idx]
+if len(y_llp_ctau_1000) > n_skim:
+    idx = np.arange(n_skim)
+    X_llp_ctau_1000 = X_llp_ctau_1000.loc[idx]
+    y_llp_ctau_1000 = y_llp_ctau_1000.loc[idx]
+    w_llp_ctau_1000 = w_llp_ctau_1000.loc[idx]
+    u_llp_ctau_1000 = u_llp_ctau_1000.loc[idx]
 
 #print(X_photon_gun.xs(0, level="subentry"))
 #print(len(X_photon_gun.xs(0, level="entry").iloc[0, :]))
@@ -69,14 +92,14 @@ print(f"Scaling up the LLP ctau weights by a factor of {pos_weight:.2f}")
 # GNN training
 from mva.gnn import SimpleGNN
 
-model = SimpleGNN(in_channels=14, global_features=3)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+model = SimpleGNN(in_channels=14, global_features=3).to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
 # BCEWithLogitsLoss expects targets as float, and we include pos_weight to weight positives (LLP class)
-criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], dtype=torch.float))
+criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], dtype=torch.float).to(device))
 #criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([1.0], dtype=torch.float))
 
 # Training
-num_epochs = 10
+num_epochs = 20
 train_losses = []
 test_losses = []
 
@@ -84,6 +107,7 @@ for epoch in range(num_epochs):
     model.train()
     total_loss_train = 0.0
     for batch_i in train_loader:
+        batch_i = batch_i.to(device)
         optimizer.zero_grad()
         # Forward pass including batch_i.u
         out = model(batch_i.x, batch_i.edge_index, batch_i.batch, batch_i.u)
@@ -100,6 +124,7 @@ for epoch in range(num_epochs):
     total_loss_test = 0.0
     with torch.no_grad():
         for batch_j in test_loader:
+            batch_j = batch_j.to(device)
             optimizer.zero_grad()
             out = model(batch_j.x, batch_j.edge_index, batch_j.batch, batch_j.u)
             y = batch_j.y.view(-1, 1).float()
@@ -128,16 +153,21 @@ plt.savefig(f"{cwd}/plots/training/training_loss_curve_gnn.png")
 ########################################
 model.eval()
 eval_losses = []
+all_outs = []
 all_preds = []
 all_labels = []
 
 with torch.no_grad():
     for batch in test_loader:
+        batch = batch.to(device)
         out = model(batch.x, batch.edge_index, batch.batch, batch.u)
         # If <= 0.0, classify as photon gun (0), else LLP (1) (using BCEWithLogitsLoss)
         preds = (out > 0.0).float().cpu().numpy()
         labels = batch.y.long().view(-1).cpu().numpy()
         
+        # Apply sigmod to get probabilities
+        out = torch.sigmoid(out)
+        all_outs.extend(out.cpu().numpy())
         all_preds.extend(preds)
         all_labels.extend(labels)
 
@@ -156,16 +186,25 @@ plt.savefig(f"{cwd}/plots/training/confusion_matrix_gnn.png")
 # 7) Draw a ROC curve
 ########################################
 from sklearn.metrics import roc_curve, auc
-fpr, tpr, thresholds = roc_curve(all_labels, all_preds)
+fpr, tpr, thresholds = roc_curve(all_labels, all_outs)
+# Get the FPR and TPR for the prediction threshold (aka all_preds)
+fpr_pred, tpr_pred, thresholds_pred = roc_curve(all_labels, all_preds)
+fpr_05 = fpr_pred[thresholds_pred == 1]
+tpr_05 = tpr_pred[thresholds_pred == 1]
 roc_auc = auc(fpr, tpr)
 fig, ax = plt.subplots()
-ax.plot(fpr, tpr, label=f'ROC curve (area = {roc_auc:.2f})')
-ax.plot([0, 1], [0, 1], 'k--')
+ax.plot(fpr, tpr, label=f'GNN ROC curve (area = {roc_auc:.2f})')
+ax.plot(fpr_05, tpr_05, 'ro', label='Threshold = 0.5')
+ax.plot(np.logspace(-5, 0, 100), np.logspace(-5, 0, 100), 'k--')
 ax.set_xlabel('False Positive Rate')
 ax.set_ylabel('True Positive Rate')
+ax.legend()
 plt.savefig(f"{cwd}/plots/training/roc_curve_gnn.png")
 
 # Draw the first five clusters from each dataset
 #for i in range(5):
 #    dataset_photon_gun.plot_data_3d(i, plot_dir=f"{cwd}/plots/training/photon_gun", draw_edges=True)
 #    dataset_llp_ctau_1000.plot_data_3d(i, plot_dir=f"{cwd}/plots/training/llp_ctau_1000", draw_edges=True)
+
+end = time.time()
+print(f"Code executed in {end - start:.2f} seconds")

@@ -8,8 +8,16 @@ import torch.utils
 from torch.utils.data import DataLoader, Subset, ConcatDataset
 
 # Stats
+import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+
+# Timing
+import time
+start = time.time()
+
+# Consider just the first 10000 clusters
+n_skim = 10000
 
 # Additional imports
 # Add the project path
@@ -21,14 +29,37 @@ os.makedirs(f"{cwd}/plots/training", exist_ok=True)
 from utils.preprocess import Preprocessor
 from utils.dataset_bdt import BDTDataset
 
-preprocessor_photon_gun = Preprocessor([f"{cwd}/ntuples/photon_gun.root"], cache_dir=f"{cwd}/cache/photon_gun", use_existing_cache=True, batch_size=10000, class_label=0)
-preprocessor_llp_ctau_1000 = Preprocessor([f"{cwd}/ntuples/llp_ctau_1000.root"], cache_dir=f"{cwd}/cache/llp_ctau_1000", use_existing_cache=True, batch_size=10000, class_label=1)
+photon_gun_dir = "/vols/cms/pb4918/StoreNTuple/HGCalTPG/DoublePhoton"
+llp_ctau_1000_dir = "/vols/cms/pb4918/StoreNTuple/HGCalTPG/LLPCtau1000NoPU"
+
+# File list is all files ending in .root
+photon_gun_files = [f"{photon_gun_dir}/{f}" for f in os.listdir(photon_gun_dir) if f.endswith(".root")]
+llp_ctau_1000_files = [f"{llp_ctau_1000_dir}/{f}" for f in os.listdir(llp_ctau_1000_dir) if f.endswith(".root")]
+
+print(f"Photon gun files: {len(photon_gun_files)}")
+print(f"LLP ctau 1000 files: {len(llp_ctau_1000_files)}")
+
+preprocessor_photon_gun = Preprocessor(photon_gun_files, cache_dir=f"{cwd}/cache/photon_gun", use_existing_cache=True, batch_size=10000, class_label=0)
+preprocessor_llp_ctau_1000 = Preprocessor(llp_ctau_1000_files, cache_dir=f"{cwd}/cache/llp_ctau_1000", use_existing_cache=True, batch_size=10000, class_label=1)
 
 preprocessor_photon_gun.cache_files()
 preprocessor_llp_ctau_1000.cache_files()
 
 X_photon_gun, y_photon_gun, w_photon_gun, u_photon_gun = preprocessor_photon_gun.get_data_dict()
 X_llp_ctau_1000, y_llp_ctau_1000, w_llp_ctau_1000, u_llp_ctau_1000 = preprocessor_llp_ctau_1000.get_data_dict()
+
+if len(y_photon_gun) > n_skim:
+    idx = np.arange(n_skim)
+    X_photon_gun = X_photon_gun.loc[idx]
+    y_photon_gun = y_photon_gun.loc[idx]
+    w_photon_gun = w_photon_gun.loc[idx]
+    u_photon_gun = u_photon_gun.loc[idx]
+if len(y_llp_ctau_1000) > n_skim:
+    idx = np.arange(n_skim)
+    X_llp_ctau_1000 = X_llp_ctau_1000.loc[idx]
+    y_llp_ctau_1000 = y_llp_ctau_1000.loc[idx]
+    w_llp_ctau_1000 = w_llp_ctau_1000.loc[idx]
+    u_llp_ctau_1000 = u_llp_ctau_1000.loc[idx]
 
 # Scale up the LLP ctau weights
 w_sum_photon_gun = w_photon_gun.sum()
@@ -144,12 +175,19 @@ if model.do_eval:
     # ROC curve
     from sklearn.metrics import roc_curve, auc
     fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba[:, 1])
+    # Get the FPR and TPR for the y_pred 
+    fpr_pred, tpr_pred, thresholds_pred = roc_curve(y_test, y_pred)
+    fpr_05 = fpr_pred[thresholds_pred == 1]
+    tpr_05 = tpr_pred[thresholds_pred == 1]
     roc_auc = auc(fpr, tpr)
     fig, ax = plt.subplots()
-    ax.plot(fpr, tpr, label=f'ROC curve (area = {roc_auc:.2f})')
-    ax.plot([0, 1], [0, 1], 'k--')
+    ax.plot(fpr, tpr, label=f'BDT ROC curve (area = {roc_auc:.2f})')
+    ax.plot(fpr_05, tpr_05, 'ro', label='Threshold = 0.5')
+    ax.plot(np.logspace(-5, 0, 100), np.logspace(-5, 0, 100), 'k--')
     ax.set_xlabel('False Positive Rate')
     ax.set_ylabel('True Positive Rate')
+    ax.legend()
     plt.savefig(f"{cwd}/plots/training/roc_curve_bdt.png")
 
-
+end = time.time()
+print(f"Code executed in {end - start:.2f} seconds")

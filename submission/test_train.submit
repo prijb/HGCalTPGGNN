@@ -1,0 +1,8 @@
+universe = vanilla
+executable = /vols/cms/pb4918/HGCalTPG/Apr25/HGCalTPGGNN/submission/test_train_wrapper.sh
+output = /vols/cms/pb4918/HGCalTPG/Apr25/HGCalTPGGNN/submission/logs/outputfile.$(CLUSTER)
+error = /vols/cms/pb4918/HGCalTPG/Apr25/HGCalTPGGNN/submission/logs/errorfile.$(CLUSTER)
+log = /vols/cms/pb4918/HGCalTPG/Apr25/HGCalTPGGNN/submission/logs/test_train_submit.$(CLUSTER).log
+request_gpus = 1
+request_memory = 16G
++MaxRuntime = 7200
