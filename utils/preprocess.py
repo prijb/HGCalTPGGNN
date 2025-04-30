@@ -25,6 +25,93 @@ def print_memory_usage(stage):
     mem_usage = process.memory_info().rss / 1024**2  # Convert to MB
     print(f"{stage} - Memory usage: {mem_usage:.2f} MB")
 
+# Genmatch functions
+def genmatch_to_photons(genpart, cl3d):
+    genpart_photons = genpart[genpart.pid == 22]
+    genpart_photons_selected = genpart_photons[genpart_photons.mother == -1]
+    hgcal_mask = np.logical_and((np.abs(genpart_photons_selected.exeta) > 1.5), np.abs(genpart_photons_selected.exeta) < 3.0)
+    pt_mask = genpart_photons_selected.pt > 10
+    skim_mask = np.logical_and(hgcal_mask, pt_mask)
+    genpart_photons_selected = genpart_photons_selected[skim_mask]
+
+    # Genmatch the cl3d to the genpart photons
+    pairs = ak.cartesian({"gp": genpart_photons_selected, "cl3d": cl3d}, axis=1, nested=True)
+    pairs_arg = ak.argcartesian({"gp": genpart_photons_selected, "cl3d": cl3d}, axis=1, nested=True)
+    dR = ((pairs.gp.exeta - pairs.cl3d.eta)**2 + (pairs.gp.exphi - pairs.cl3d.phi)**2)**0.5
+    order = ak.argsort(dR, axis=2, ascending=True)
+    dR = dR[order]
+    pairs_dR_ordered = pairs[order]
+    pairs_arg_dR_ordered = pairs_arg[order]
+    pairs_dR_ordered_copy = ak.copy(pairs_dR_ordered)
+    pairs_arg_dR_ordered_copy = ak.copy(pairs_arg_dR_ordered)
+
+    cut_dR = dR < 0.2
+
+    # Match such that only one cluster is matched per photon
+    pairs_dR_ordered = pairs_dR_ordered[cut_dR]
+    pairs_arg_dR_ordered = pairs_arg_dR_ordered[cut_dR]
+    gp_i, cl3d_i = ak.unzip(pairs_dR_ordered)
+    arg_gp, arg_cl3d = ak.unzip(pairs_arg_dR_ordered)
+    match_per_cone = ak.num(pairs_dR_ordered, axis=-1)
+    arg_gp_cone = arg_gp[match_per_cone == 1]
+    arg_gp_cone = ak.firsts(arg_gp_cone, axis=2)
+    arg_gp_cone_unique = arg_gp_cone[~ak.is_none(arg_gp_cone, axis=-1)]
+    arg_cl3d_cone = arg_cl3d[match_per_cone == 1]
+    arg_cl3d_cone = ak.firsts(arg_cl3d_cone, axis=2)
+    arg_cl3d_cone_unique = arg_cl3d_cone[~ak.is_none(arg_cl3d_cone, axis=-1)]
+
+    gp_cone = genpart_photons_selected[arg_gp_cone_unique]
+    cl3d_cone = cl3d[arg_cl3d_cone_unique]
+
+    return cl3d_cone
+
+def genmatch_to_bsm_photons(gen, gen_daughters, genpart, cl3d):
+    genpart_photons = genpart[genpart.pid == 22]
+    bsm_decays = gen_daughters[gen.pdgid == 25]
+    gen_photons = gen[ak.flatten(bsm_decays, axis=2)]
+    gen_photons = gen_photons[np.abs(gen_photons.pdgid) == 22]
+
+    # Match genpart to gen
+    pairs_genpart = ak.cartesian({'gen': gen_photons, 'genpart': genpart_photons})
+    dR_genpart = ((pairs_genpart.gen.eta - pairs_genpart.genpart.eta)**2 + (pairs_genpart.gen.phi - pairs_genpart.genpart.phi)**2)**0.5
+    dR_mask = dR_genpart == 0 
+    genpart_photons_from_bsm = pairs_genpart.genpart[dR_mask]
+    hgcal_mask = np.logical_and((np.abs(genpart_photons_from_bsm.exeta) > 1.5), np.abs(genpart_photons_from_bsm.exeta) < 3.0)
+    pt_mask = genpart_photons_from_bsm.pt > 10
+    skim_mask = np.logical_and(hgcal_mask, pt_mask)
+    genpart_photons_selected = genpart_photons_from_bsm[skim_mask]
+
+    # Genmatch the cl3d to the genpart photons
+    pairs = ak.cartesian({"gp": genpart_photons_selected, "cl3d": cl3d}, axis=1, nested=True)
+    pairs_arg = ak.argcartesian({"gp": genpart_photons_selected, "cl3d": cl3d}, axis=1, nested=True)
+    dR = ((pairs.gp.exeta - pairs.cl3d.eta)**2 + (pairs.gp.exphi - pairs.cl3d.phi)**2)**0.5
+    order = ak.argsort(dR, axis=2, ascending=True)
+    dR = dR[order]
+    pairs_dR_ordered = pairs[order]
+    pairs_arg_dR_ordered = pairs_arg[order]
+    pairs_dR_ordered_copy = ak.copy(pairs_dR_ordered)
+    pairs_arg_dR_ordered_copy = ak.copy(pairs_arg_dR_ordered)
+
+    cut_dR = dR < 0.2
+
+    # Match such that only one cluster is matched per photon
+    pairs_dR_ordered = pairs_dR_ordered[cut_dR]
+    pairs_arg_dR_ordered = pairs_arg_dR_ordered[cut_dR]
+    gp_i, cl3d_i = ak.unzip(pairs_dR_ordered)
+    arg_gp, arg_cl3d = ak.unzip(pairs_arg_dR_ordered)
+    match_per_cone = ak.num(pairs_dR_ordered, axis=-1)
+    arg_gp_cone = arg_gp[match_per_cone == 1]
+    arg_gp_cone = ak.firsts(arg_gp_cone, axis=2)
+    arg_gp_cone_unique = arg_gp_cone[~ak.is_none(arg_gp_cone, axis=-1)]
+    arg_cl3d_cone = arg_cl3d[match_per_cone == 1]
+    arg_cl3d_cone = ak.firsts(arg_cl3d_cone, axis=2)
+    arg_cl3d_cone_unique = arg_cl3d_cone[~ak.is_none(arg_cl3d_cone, axis=-1)]
+
+    gp_cone = genpart_photons_selected[arg_gp_cone_unique]
+    cl3d_cone = cl3d[arg_cl3d_cone_unique]
+
+    return cl3d_cone
+
 """
 Returns the following per cluster data structures
 X: Trigger cell information
@@ -88,13 +175,18 @@ class Preprocessor():
 
         tc_vars = [var for var in var_list if "tc_" in var]
         cl3d_vars = [var for var in var_list if "cl3d_" in var]
+        gen_vars = [var for var in var_list if "gen_" in var]
+        genpart_vars = [var for var in var_list if "genpart_" in var]
 
         remove_tc_vars = ["tc_n", "tc_id", "tc_cluster_id", "tc_multicluster_id", "tc_multicluster_pt"]
         remove_cl3d_vars = ["cl3d_n"]
+        remove_gen_vars = ["gen_daughters"]
         for var in remove_tc_vars:
             tc_vars.remove(var)
         for var in remove_cl3d_vars:
             cl3d_vars.remove(var)
+        for var in remove_gen_vars:
+            gen_vars.remove(var)
 
         # Read the data
         print(f"Reading variables: {var_list}")
@@ -134,11 +226,39 @@ class Preprocessor():
             tc = ak.zip(tc_dict)
             cl3d = ak.zip(cl3d_dict)
 
+            # Zip the gen variables
+            gen_dict = {}
+            genpart_dict = {}
+            for var in gen_vars:
+                var_key = var.split("_")[1:]
+                var_key = "_".join(var_key)
+                gen_dict[var_key] = events[var]
+            for var in genpart_vars:
+                var_key = var.split("_")[1:]
+                var_key = "_".join(var_key)
+                genpart_dict[var_key] = events[var]
+            gen = ak.zip(gen_dict)
+            genpart = ak.zip(genpart_dict)
+            gen_daughters = events["gen_daughters"]
+
             # Filter out entries (jagged, use zipped collections)
             cl3d_mask = cl3d.pt > 10
             cl3d = cl3d[cl3d_mask]
 
+            #print(f"Before genmatch: {ak.sum(ak.num(cl3d))} clusters")
+            #print(f"cl3d: {cl3d}")
+            #print(f"cl3d multiplicity: {ak.num(cl3d)}")
             # TO DO: Genmatch clusters (either to gen photon, or BSM decay)
+            if self.class_label == 0:
+                cl3d = genmatch_to_photons(genpart, cl3d)
+            elif self.class_label == 1:
+                cl3d = genmatch_to_bsm_photons(gen, gen_daughters, genpart, cl3d)
+            else:
+                raise ValueError(f"Invalid class label {self.class_label}")
+            
+            #print(f"After genmatch: {ak.sum(ak.num(cl3d))} clusters")
+            #print(f"cl3d: {cl3d}")
+            #print(f"cl3d multiplicity: {ak.num(cl3d)}")
 
             # Print memory usage for debugging
             #print_memory_usage(f"Arrays loaded and filtered")

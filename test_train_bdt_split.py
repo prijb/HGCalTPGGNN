@@ -1,6 +1,7 @@
 # Train a BDT classifier using a train-validation-test split dataset
 import os
 import sys
+import pickle
 
 # Data loaders
 import torch
@@ -17,7 +18,7 @@ import time
 start = time.time()
 
 # Consider just the first 3000 clusters
-n_skim = 3000
+n_skim = -1
 # This is for the "dataset" object
 use_cache_dataset = True
 cache_dataset_dir = "/vols/cms/pb4918/HGCalTPG/Apr25/HGCalTPGGNN/cache_new/datasets"
@@ -137,6 +138,7 @@ else:
     dataset_llp_ctau_1000_validation = torch.load(os.path.join(cache_dataset_dir, "dataset_llp_ctau_1000_bdt_validation.pt"))
     dataset_llp_ctau_1000_test = torch.load(os.path.join(cache_dataset_dir, "dataset_llp_ctau_1000_bdt_test.pt"))
 
+print("Training feature names:", dataset_photon_gun_training.feature_list)
 # Scale up the LLP weights
 w_sum_photon_gun_training = dataset_photon_gun_training.W.sum()
 w_sum_llp_ctau_1000_training = dataset_llp_ctau_1000_training.W.sum()
@@ -160,13 +162,13 @@ validation_loader = DataLoader(valid_dataset, batch_size=len(valid_dataset), shu
 
 # BDT params
 bdt_model_params = {
-    "subsample": 0.5,
+    "subsample": 1.0,
     "max_depth": 5,
     "gamma": 1.0,
-    "n_estimators": 200,
-    "eta": 0.03,
-    "reg_lambda": 1.0,
-    "reg_alpha": 1.0,
+    "n_estimators": 500,
+    "eta": 0.05,
+    "reg_lambda": 3.0,
+    "reg_alpha": 3.0,
     "scale_pos_weight": pos_weight_training,
 }
 
@@ -192,6 +194,10 @@ print(f"w: {w_train.shape}")
 
 model.train([X_train, y_train, w_train], [X_validation, y_validation, w_validation])
 
+# Save the model class 
+with open(f"{cwd}/models/bdt_model.pkl", "wb") as f:
+    pickle.dump(model, f)
+
 epochs, results = model.evaluate(X_validation, y_validation)
 print(f"BDT training finished after {epochs} epochs")
 
@@ -210,6 +216,15 @@ if model.do_eval:
     print("Plotting model evaluation")
     x_axis = range(0, epochs)
 
+    # Feature importance
+    from xgboost import plot_importance
+    fig, ax = plt.subplots()
+    model.model.get_booster().feature_names = dataset_photon_gun_training.feature_list
+    plot_importance(model.model, ax=ax, importance_type='total_gain', max_num_features=30)
+    plt.tight_layout()
+    plt.savefig(f"{cwd}/plots/training/feature_importance_bdt.png")
+    
+
     # Loss
     fig, ax = plt.subplots()
     ax.plot(x_axis, results['validation_0']['logloss'], label='Train')
@@ -223,7 +238,7 @@ if model.do_eval:
     cm = confusion_matrix(y_test, y_pred, normalize='true')
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["PhotonGun (0)", "LLP (1)"])
     disp.plot(values_format='.2f')
-    plt.title("Confusion Matrix")
+    plt.title("Confusion Matrix (Row norm)")
     plt.tight_layout()
     plt.savefig(f"{cwd}/plots/training/confusion_matrix_rownorm_bdt.png")
 
@@ -231,7 +246,7 @@ if model.do_eval:
     cm = confusion_matrix(y_test, y_pred, normalize='pred')
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["PhotonGun (0)", "LLP (1)"])
     disp.plot(values_format='.2f')
-    plt.title("Confusion Matrix")
+    plt.title("Confusion Matrix (Column norm)")
     plt.tight_layout()
     plt.savefig(f"{cwd}/plots/training/confusion_matrix_colnorm_bdt.png")
 
@@ -252,11 +267,13 @@ if model.do_eval:
     tpr_05 = tpr_pred[thresholds_pred == 1]
     roc_auc = auc(fpr, tpr)
     fig, ax = plt.subplots()
-    ax.plot(fpr, tpr, label=f'BDT ROC curve (area = {roc_auc:.2f})')
+    ax.plot(fpr, tpr, label=f'BDT ROC curve (area = {roc_auc:.4f})')
     ax.plot(fpr_05, tpr_05, 'ro', label='Threshold = 0.5')
     ax.plot(np.logspace(-5, 0, 100), np.logspace(-5, 0, 100), 'k--')
     ax.set_xlabel('False Positive Rate')
     ax.set_ylabel('True Positive Rate')
+    ax.set_xscale('log')
+    ax.set_xlim(1e-5, 1)
     ax.legend()
     plt.savefig(f"{cwd}/plots/training/roc_curve_bdt.png")
 

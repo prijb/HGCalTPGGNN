@@ -92,17 +92,6 @@ class BDTDataset(Dataset):
         #print(f"First cluster: {self.x[0]}")       
         #print(len(feature_list))
 
-        # TO DO: Convert above into a list of Data objects where each Data object has an x, y and W
-        #self.data_list = []
-        #print("Creating data objects")
-        #for i in tqdm(range(len(y))):
-            # Create a Data object for each cluster
-        #    data = {}
-        #    data["x"] = self.x[i]
-        #    data["y"] = self.y.iloc[i]
-        #    data["W"] = self.W.iloc[i]
-        #    self.data_list.append(data)
-
         # Convert to torch tensors
         self.x = torch.tensor(self.x, dtype=torch.float32)
         self.y = torch.tensor(self.y.values, dtype=torch.float32)

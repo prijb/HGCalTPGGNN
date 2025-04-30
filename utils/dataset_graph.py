@@ -48,7 +48,7 @@ def compute_full_fc_edges(tc_coords):
     return edge_index, edge_attr
 
 class GraphDataset(torch.utils.data.Dataset):
-    def __init__(self, X, y, w, u, use_knn=False, k=5):
+    def __init__(self, X, y, w, u, use_knn=False, k=5, forward_graph=False):
         self.data_list = []
         self.fields = X.columns.values
         self.use_knn = use_knn
@@ -57,7 +57,10 @@ class GraphDataset(torch.utils.data.Dataset):
         # Precompute the data objects per cluster
         print("Creating data objects")
         if use_knn:
-            print(f"Using kNN with k={k}")
+            if forward_graph:
+                print(f"Using forward kNN with k={k}")
+            else:
+                print(f"Using regular kNN with k={k}")
         else:
             print("Using fully connected graph")
         for idx in tqdm(range(len(y))):
@@ -91,12 +94,42 @@ class GraphDataset(torch.utils.data.Dataset):
 
             # Vectorized version
             if use_knn:
-                pos = torch.tensor(tc_coords, dtype=torch.float)
-                edge_index = knn_graph(pos, k=k, loop=False)
-                # Compute edge attributes (Euclidean distances) from the knn graph
-                src = pos[edge_index[0]]
-                dst = pos[edge_index[1]]
-                edge_attr = torch.norm(src - dst, dim=1, p=2).unsqueeze(1)
+                if not forward_graph:
+                    pos = torch.tensor(tc_coords, dtype=torch.float)
+                    edge_index = knn_graph(pos, k=k, loop=False)
+                    # Compute edge attributes (Euclidean distances) from the knn graph
+                    src = pos[edge_index[0]]
+                    dst = pos[edge_index[1]]
+                    edge_attr = torch.norm(src - dst, dim=1, p=2).unsqueeze(1)
+                else:
+                    tc_layers = nodes["layer"].values
+                    tc_indices = nodes.index.get_level_values("subentry").values
+                    edge_index = []
+                    for i_tc in range(len(tc_coords)):
+                        tc_layer_i = tc_layers[i_tc]
+                        # Get the TCs in the next layer
+                        tcs_next_layer_mask = tc_layers == tc_layer_i + 2
+                        tc_coords_next_layer = tc_coords[tcs_next_layer_mask, :]
+                        tc_indices_next_layer = tc_indices[tcs_next_layer_mask]
+
+                        tc_pair_dist = np.sqrt(np.sum((tc_coords_next_layer - tc_coords[i_tc])**2, axis=1))
+                        tc_pair_dist_order = np.argsort(tc_pair_dist)
+                        tc_neighbours = tc_pair_dist_order[:k]
+                        tc_neighbours = tc_indices_next_layer[tc_neighbours]
+
+                        edge_index_i = [[i_tc, j_tc] for j_tc in tc_neighbours]
+                        edge_index += edge_index_i
+
+                    edge_index = np.array(edge_index).T
+                    if len(edge_index) == 0:
+                        print(f"Cluster {idx} has no edges")
+                        edge_index = np.zeros((2, 1), dtype=int)
+                    src = edge_index[0]
+                    dst = edge_index[1]
+                    edge_attr = np.sqrt(np.sum((tc_coords[src] - tc_coords[dst])**2, axis=1)).reshape(-1, 1)
+                    # Convert to torch tensors
+                    edge_index = torch.tensor(edge_index, dtype=torch.long)
+                    edge_attr = torch.tensor(edge_attr, dtype=torch.float)
 
             else:    
                 edge_index, edge_attr = compute_full_fc_edges(tc_coords)

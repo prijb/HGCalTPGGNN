@@ -11,6 +11,7 @@ from torch.utils.data import ConcatDataset
 from torch_geometric.nn import GCNConv, global_mean_pool, GraphNorm
 from torch_geometric.loader import DataLoader
 
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
@@ -24,7 +25,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Consider just the first 3000 clusters
 n_skim = -1
 # This is for the "dataset" object
-use_cache_dataset = False
+use_cache_dataset = True
 cache_dataset_dir = "/vols/cms/pb4918/HGCalTPG/Apr25/HGCalTPGGNN/cache_new/datasets"
 
 # Additional imports
@@ -54,96 +55,117 @@ preprocessor_llp_ctau_1000_training = Preprocessor(os.listdir(llp_ctau_1000_trai
 preprocessor_llp_ctau_1000_validation = Preprocessor(os.listdir(llp_ctau_1000_validation), cache_dir=llp_ctau_1000_validation, use_existing_cache=True, batch_size=10000, class_label=1)
 preprocessor_llp_ctau_1000_test = Preprocessor(os.listdir(llp_ctau_1000_test), cache_dir=llp_ctau_1000_test, use_existing_cache=True, batch_size=10000, class_label=1)
 
+# Get the data for the train, test and validation sets
+X_photon_gun_training, y_photon_gun_training, w_photon_gun_training, u_photon_gun_training = preprocessor_photon_gun_training.get_data_dict()
+X_photon_gun_validation, y_photon_gun_validation, w_photon_gun_validation, u_photon_gun_validation = preprocessor_photon_gun_validation.get_data_dict()
+X_photon_gun_test, y_photon_gun_test, w_photon_gun_test, u_photon_gun_test = preprocessor_photon_gun_test.get_data_dict()
+
+X_llp_ctau_1000_training, y_llp_ctau_1000_training, w_llp_ctau_1000_training, u_llp_ctau_1000_training = preprocessor_llp_ctau_1000_training.get_data_dict()
+X_llp_ctau_1000_validation, y_llp_ctau_1000_validation, w_llp_ctau_1000_validation, u_llp_ctau_1000_validation = preprocessor_llp_ctau_1000_validation.get_data_dict()
+X_llp_ctau_1000_test, y_llp_ctau_1000_test, w_llp_ctau_1000_test, u_llp_ctau_1000_test = preprocessor_llp_ctau_1000_test.get_data_dict()
+
+# Skim datasets
+if (len(y_photon_gun_training) > n_skim) & (n_skim > 0):
+    idx = np.arange(n_skim)
+    X_photon_gun_training = X_photon_gun_training.loc[idx]
+    y_photon_gun_training = y_photon_gun_training.loc[idx]
+    w_photon_gun_training = w_photon_gun_training.loc[idx]
+    u_photon_gun_training = u_photon_gun_training.loc[idx]
+if (len(y_photon_gun_validation) > n_skim) & (n_skim > 0):
+    idx = np.arange(n_skim)
+    X_photon_gun_validation = X_photon_gun_validation.loc[idx]
+    y_photon_gun_validation = y_photon_gun_validation.loc[idx]
+    w_photon_gun_validation = w_photon_gun_validation.loc[idx]
+    u_photon_gun_validation = u_photon_gun_validation.loc[idx]
+if (len(y_photon_gun_test) > n_skim) & (n_skim > 0):
+    idx = np.arange(n_skim)
+    X_photon_gun_test = X_photon_gun_test.loc[idx]
+    y_photon_gun_test = y_photon_gun_test.loc[idx]
+    w_photon_gun_test = w_photon_gun_test.loc[idx]
+    u_photon_gun_test = u_photon_gun_test.loc[idx]
+if (len(y_llp_ctau_1000_training) > n_skim) & (n_skim > 0):
+    idx = np.arange(n_skim)
+    X_llp_ctau_1000_training = X_llp_ctau_1000_training.loc[idx]
+    y_llp_ctau_1000_training = y_llp_ctau_1000_training.loc[idx]
+    w_llp_ctau_1000_training = w_llp_ctau_1000_training.loc[idx]
+    u_llp_ctau_1000_training = u_llp_ctau_1000_training.loc[idx]
+if (len(y_llp_ctau_1000_validation) > n_skim) & (n_skim > 0):
+    idx = np.arange(n_skim)
+    X_llp_ctau_1000_validation = X_llp_ctau_1000_validation.loc[idx]
+    y_llp_ctau_1000_validation = y_llp_ctau_1000_validation.loc[idx]
+    w_llp_ctau_1000_validation = w_llp_ctau_1000_validation.loc[idx]
+    u_llp_ctau_1000_validation = u_llp_ctau_1000_validation.loc[idx]
+if (len(y_llp_ctau_1000_test) > n_skim) & (n_skim > 0):
+    idx = np.arange(n_skim)
+    X_llp_ctau_1000_test = X_llp_ctau_1000_test.loc[idx]
+    y_llp_ctau_1000_test = y_llp_ctau_1000_test.loc[idx]
+    w_llp_ctau_1000_test = w_llp_ctau_1000_test.loc[idx]
+    u_llp_ctau_1000_test = u_llp_ctau_1000_test.loc[idx]
+
+# Regularise data using the full dataset (training)
+X_full = pd.concat([X_photon_gun_training, X_llp_ctau_1000_training])
+y_full = pd.concat([y_photon_gun_training, y_llp_ctau_1000_training])
+u_full = pd.concat([u_photon_gun_training, u_llp_ctau_1000_training])
+
+X_mean = X_full.mean(axis=0)
+X_std = X_full.std(axis=0)
+u_mean = u_full.mean(axis=0)
+u_std = u_full.std(axis=0)
+
+print("\nTraining dataset statistics")
+print(f"X Mean: {X_mean}, Std: {X_std}")
+print(f"u Mean: {u_mean}, Std: {u_std}")
+
+# Move to device
+X_mean = torch.tensor(X_mean.values, dtype=torch.float32, device=device)
+X_std  = torch.tensor(X_std.values,  dtype=torch.float32, device=device)
+u_mean = torch.tensor(u_mean.values, dtype=torch.float32, device=device)
+u_std  = torch.tensor(u_std.values,  dtype=torch.float32, device=device)
+
+# Scale up the LLP weights
+# Get the weights for the train, test and validation sets
+w_sum_photon_gun_training = w_photon_gun_training.sum()
+w_sum_photon_gun_validation = w_photon_gun_validation.sum()
+w_sum_photon_gun_test = w_photon_gun_test.sum()
+
+w_sum_llp_ctau_1000_training = w_llp_ctau_1000_training.sum()
+w_sum_llp_ctau_1000_validation = w_llp_ctau_1000_validation.sum()
+w_sum_llp_ctau_1000_test = w_llp_ctau_1000_test.sum()
+
+# All the pos weights are similar (~2.0-2.1)
+pos_weight_training = (w_sum_photon_gun_training / w_sum_llp_ctau_1000_training).values[0]
+pos_weight_validation = (w_sum_photon_gun_validation / w_sum_llp_ctau_1000_validation).values[0]
+pos_weight_test = (w_sum_photon_gun_test / w_sum_llp_ctau_1000_test).values[0]
+pos_weight_total = ((w_sum_photon_gun_training + w_sum_photon_gun_validation + w_sum_photon_gun_test) / (w_sum_llp_ctau_1000_training + w_sum_llp_ctau_1000_validation + w_sum_llp_ctau_1000_test)).values[0]
+
+# Create the datasets
 if use_cache_dataset == False:
-    # Get the data for the train, test and validation sets
-    X_photon_gun_training, y_photon_gun_training, w_photon_gun_training, u_photon_gun_training = preprocessor_photon_gun_training.get_data_dict()
-    X_photon_gun_validation, y_photon_gun_validation, w_photon_gun_validation, u_photon_gun_validation = preprocessor_photon_gun_validation.get_data_dict()
-    X_photon_gun_test, y_photon_gun_test, w_photon_gun_test, u_photon_gun_test = preprocessor_photon_gun_test.get_data_dict()
-
-    X_llp_ctau_1000_training, y_llp_ctau_1000_training, w_llp_ctau_1000_training, u_llp_ctau_1000_training = preprocessor_llp_ctau_1000_training.get_data_dict()
-    X_llp_ctau_1000_validation, y_llp_ctau_1000_validation, w_llp_ctau_1000_validation, u_llp_ctau_1000_validation = preprocessor_llp_ctau_1000_validation.get_data_dict()
-    X_llp_ctau_1000_test, y_llp_ctau_1000_test, w_llp_ctau_1000_test, u_llp_ctau_1000_test = preprocessor_llp_ctau_1000_test.get_data_dict()
-
-    # Skim datasets
-    if (len(y_photon_gun_training) > n_skim) & (n_skim > 0):
-        idx = np.arange(n_skim)
-        X_photon_gun_training = X_photon_gun_training.loc[idx]
-        y_photon_gun_training = y_photon_gun_training.loc[idx]
-        w_photon_gun_training = w_photon_gun_training.loc[idx]
-        u_photon_gun_training = u_photon_gun_training.loc[idx]
-    if (len(y_photon_gun_validation) > n_skim) & (n_skim > 0):
-        idx = np.arange(n_skim)
-        X_photon_gun_validation = X_photon_gun_validation.loc[idx]
-        y_photon_gun_validation = y_photon_gun_validation.loc[idx]
-        w_photon_gun_validation = w_photon_gun_validation.loc[idx]
-        u_photon_gun_validation = u_photon_gun_validation.loc[idx]
-    if (len(y_photon_gun_test) > n_skim) & (n_skim > 0):
-        idx = np.arange(n_skim)
-        X_photon_gun_test = X_photon_gun_test.loc[idx]
-        y_photon_gun_test = y_photon_gun_test.loc[idx]
-        w_photon_gun_test = w_photon_gun_test.loc[idx]
-        u_photon_gun_test = u_photon_gun_test.loc[idx]
-    if (len(y_llp_ctau_1000_training) > n_skim) & (n_skim > 0):
-        idx = np.arange(n_skim)
-        X_llp_ctau_1000_training = X_llp_ctau_1000_training.loc[idx]
-        y_llp_ctau_1000_training = y_llp_ctau_1000_training.loc[idx]
-        w_llp_ctau_1000_training = w_llp_ctau_1000_training.loc[idx]
-        u_llp_ctau_1000_training = u_llp_ctau_1000_training.loc[idx]
-    if (len(y_llp_ctau_1000_validation) > n_skim) & (n_skim > 0):
-        idx = np.arange(n_skim)
-        X_llp_ctau_1000_validation = X_llp_ctau_1000_validation.loc[idx]
-        y_llp_ctau_1000_validation = y_llp_ctau_1000_validation.loc[idx]
-        w_llp_ctau_1000_validation = w_llp_ctau_1000_validation.loc[idx]
-        u_llp_ctau_1000_validation = u_llp_ctau_1000_validation.loc[idx]
-    if (len(y_llp_ctau_1000_test) > n_skim) & (n_skim > 0):
-        idx = np.arange(n_skim)
-        X_llp_ctau_1000_test = X_llp_ctau_1000_test.loc[idx]
-        y_llp_ctau_1000_test = y_llp_ctau_1000_test.loc[idx]
-        w_llp_ctau_1000_test = w_llp_ctau_1000_test.loc[idx]
-        u_llp_ctau_1000_test = u_llp_ctau_1000_test.loc[idx]
-
-
-    # Scale up the LLP weights
-    # Get the weights for the train, test and validation sets
-    w_sum_photon_gun_training = w_photon_gun_training.sum()
-    w_sum_photon_gun_validation = w_photon_gun_validation.sum()
-    w_sum_photon_gun_test = w_photon_gun_test.sum()
-
-    w_sum_llp_ctau_1000_training = w_llp_ctau_1000_training.sum()
-    w_sum_llp_ctau_1000_validation = w_llp_ctau_1000_validation.sum()
-    w_sum_llp_ctau_1000_test = w_llp_ctau_1000_test.sum()
-
-    # All the pos weights are similar (~2.0-2.1)
-    pos_weight_training = (w_sum_photon_gun_training / w_sum_llp_ctau_1000_training).values[0]
-    pos_weight_validation = (w_sum_photon_gun_validation / w_sum_llp_ctau_1000_validation).values[0]
-    pos_weight_test = (w_sum_photon_gun_test / w_sum_llp_ctau_1000_test).values[0]
-    pos_weight_total = ((w_sum_photon_gun_training + w_sum_photon_gun_validation + w_sum_photon_gun_test) / (w_sum_llp_ctau_1000_training + w_sum_llp_ctau_1000_validation + w_sum_llp_ctau_1000_test)).values[0]
-
-    # Create the datasets
-    dataset_photon_gun_training = GraphDataset(X_photon_gun_training, y_photon_gun_training, w_photon_gun_training, u_photon_gun_training, use_knn=True, k=5)
-    dataset_photon_gun_validation = GraphDataset(X_photon_gun_validation, y_photon_gun_validation, w_photon_gun_validation, u_photon_gun_validation, use_knn=True, k=5)
-    dataset_photon_gun_test = GraphDataset(X_photon_gun_test, y_photon_gun_test, w_photon_gun_test, u_photon_gun_test, use_knn=True, k=5)
-    dataset_llp_ctau_1000_training = GraphDataset(X_llp_ctau_1000_training, y_llp_ctau_1000_training, w_llp_ctau_1000_training, u_llp_ctau_1000_training, use_knn=True, k=5)
-    dataset_llp_ctau_1000_validation = GraphDataset(X_llp_ctau_1000_validation, y_llp_ctau_1000_validation, w_llp_ctau_1000_validation, u_llp_ctau_1000_validation, use_knn=True, k=5)
-    dataset_llp_ctau_1000_test = GraphDataset(X_llp_ctau_1000_test, y_llp_ctau_1000_test, w_llp_ctau_1000_test, u_llp_ctau_1000_test, use_knn=True, k=5)
+    dataset_photon_gun_training = GraphDataset(X_photon_gun_training, y_photon_gun_training, w_photon_gun_training, u_photon_gun_training, use_knn=True, k=5, forward_graph=True)
+    dataset_photon_gun_validation = GraphDataset(X_photon_gun_validation, y_photon_gun_validation, w_photon_gun_validation, u_photon_gun_validation, use_knn=True, k=5, forward_graph=True)
+    dataset_photon_gun_test = GraphDataset(X_photon_gun_test, y_photon_gun_test, w_photon_gun_test, u_photon_gun_test, use_knn=True, k=5, forward_graph=True)
+    dataset_llp_ctau_1000_training = GraphDataset(X_llp_ctau_1000_training, y_llp_ctau_1000_training, w_llp_ctau_1000_training, u_llp_ctau_1000_training, use_knn=True, k=5, forward_graph=True)
+    dataset_llp_ctau_1000_validation = GraphDataset(X_llp_ctau_1000_validation, y_llp_ctau_1000_validation, w_llp_ctau_1000_validation, u_llp_ctau_1000_validation, use_knn=True, k=5, forward_graph=True)
+    dataset_llp_ctau_1000_test = GraphDataset(X_llp_ctau_1000_test, y_llp_ctau_1000_test, w_llp_ctau_1000_test, u_llp_ctau_1000_test, use_knn=True, k=5, forward_graph=True)
     print(f"\nGenerated datasets from scratch and saving to cache at {cache_dataset_dir}")
     torch.save(dataset_photon_gun_training, os.path.join(cache_dataset_dir, "dataset_photon_gun_gnn_training.pt"))
     torch.save(dataset_photon_gun_validation, os.path.join(cache_dataset_dir, "dataset_photon_gun_gnn_validation.pt"))
     torch.save(dataset_photon_gun_test, os.path.join(cache_dataset_dir, "dataset_photon_gun_gnn_test.pt"))
     torch.save(dataset_llp_ctau_1000_training, os.path.join(cache_dataset_dir, "dataset_llp_ctau_1000_gnn_training.pt"))
+    torch.save(dataset_llp_ctau_1000_validation, os.path.join(cache_dataset_dir, "dataset_llp_ctau_1000_gnn_validation.pt"))
+    torch.save(dataset_llp_ctau_1000_test, os.path.join(cache_dataset_dir, "dataset_llp_ctau_1000_gnn_test.pt"))
 else:
     print(f"\nLoading datasets from cache at {cache_dataset_dir}")
     dataset_photon_gun_training = torch.load(os.path.join(cache_dataset_dir, "dataset_photon_gun_gnn_training.pt"))
     dataset_photon_gun_validation = torch.load(os.path.join(cache_dataset_dir, "dataset_photon_gun_gnn_validation.pt"))
     dataset_photon_gun_test = torch.load(os.path.join(cache_dataset_dir, "dataset_photon_gun_gnn_test.pt"))
     dataset_llp_ctau_1000_training = torch.load(os.path.join(cache_dataset_dir, "dataset_llp_ctau_1000_gnn_training.pt"))
+    dataset_llp_ctau_1000_validation = torch.load(os.path.join(cache_dataset_dir, "dataset_llp_ctau_1000_gnn_validation.pt"))
+    dataset_llp_ctau_1000_test = torch.load(os.path.join(cache_dataset_dir, "dataset_llp_ctau_1000_gnn_test.pt"))
 
 # Scale up the LLP weights
-w_sum_photon_gun_training = dataset_photon_gun_training.W.sum()
-w_sum_llp_ctau_1000_training = dataset_llp_ctau_1000_training.W.sum()
-print(f"Photon gun training weights: {w_sum_photon_gun_training}")
-print(f"LLP ctau 1000 training weights: {w_sum_llp_ctau_1000_training}")
-pos_weight_training = (w_sum_photon_gun_training / w_sum_llp_ctau_1000_training).item()
+print(f"Photon gun training weights: {w_sum_photon_gun_training.values[0]}")
+print(f"LLP ctau 1000 training weights: {w_sum_llp_ctau_1000_training.values[0]}")
+pos_weight_training = (w_sum_photon_gun_training / w_sum_llp_ctau_1000_training).values[0]
 
 # Concatenate the datasets
 train_dataset = ConcatDataset([dataset_photon_gun_training, dataset_llp_ctau_1000_training])
@@ -164,13 +186,15 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=True)
 from mva.gnn import SimpleGNN
 
 model = SimpleGNN(in_channels=14, global_features=3).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+# Schedule learning rate to go down by a factor of 0.2 every 5 epochs
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5, last_epoch=-1)
 # BCEWithLogitsLoss expects targets as float, and we include pos_weight to weight positives (LLP class)
 criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight_training], dtype=torch.float).to(device))
 #criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([1.0], dtype=torch.float))
 
 # Training 
-num_epochs = 30
+num_epochs = 40
 train_losses = []
 valid_losses = []
 
@@ -179,6 +203,9 @@ for epoch in range(num_epochs):
     total_loss_train = 0.0
     for batch_i in train_loader:
         batch_i = batch_i.to(device)
+        # Regularise
+        batch_i.x = (batch_i.x - X_mean) / X_std
+        batch_i.u = (batch_i.u - u_mean) / u_std
         optimizer.zero_grad()
         # Forward pass including batch_i.u
         out = model(batch_i.x, batch_i.edge_index, batch_i.batch, batch_i.u)
@@ -189,6 +216,9 @@ for epoch in range(num_epochs):
         optimizer.step()
         
         total_loss_train += loss.item() * batch_i.num_graphs
+    
+    scheduler.step()
+    current_lr = optimizer.param_groups[0]['lr']
 
     # Validation loss
     model.eval()
@@ -196,6 +226,9 @@ for epoch in range(num_epochs):
     with torch.no_grad():
         for batch_j in valid_loader:
             batch_j = batch_j.to(device)
+            # Regularise
+            batch_j.x = (batch_j.x - X_mean) / X_std
+            batch_j.u = (batch_j.u - u_mean) / u_std
             optimizer.zero_grad()
             out = model(batch_j.x, batch_j.edge_index, batch_j.batch, batch_j.u)
             y = batch_j.y.view(-1, 1).float()
@@ -208,7 +241,18 @@ for epoch in range(num_epochs):
     valid_losses.append(total_loss_valid)
     #print(f"Epoch [{epoch+1}/{num_epochs}] - Train Loss: {total_loss_train:.4f}")
     #print(f"Epoch [{epoch+1}/{num_epochs}] - valid Loss: {total_loss_valid:.4f}")
-    print(f"Epoch [{epoch+1}/{num_epochs}] - Train Loss: {total_loss_train:.4f} - Validation Loss: {total_loss_valid:.4f}")
+    print(f"Epoch [{epoch+1}/{num_epochs}] with lr = {current_lr:.2e} - Train Loss: {total_loss_train:.4f} - Validation Loss: {total_loss_valid:.4f}")
+
+# Save the model
+torch.save(model.state_dict(), f"{cwd}/models/gnn_model.pth")
+# Save the mean and std
+reg_dict = {}
+reg_dict["X_mean"] = X_mean
+reg_dict["X_std"] = X_std
+reg_dict["u_mean"] = u_mean
+reg_dict["u_std"] = u_std
+with open(f"{cwd}/models/gnn_reg.pkl", "wb") as f:
+    pickle.dump(reg_dict, f)
 
 
 fig, ax = plt.subplots()
@@ -229,6 +273,9 @@ all_labels = []
 with torch.no_grad():
     for batch in test_loader:
         batch = batch.to(device)
+        # Regularise
+        batch.x = (batch.x - X_mean) / X_std
+        batch.u = (batch.u - u_mean) / u_std
         out = model(batch.x, batch.edge_index, batch.batch, batch.u)
         # If <= 0.0, classify as photon gun (0), else LLP (1) (using BCEWithLogitsLoss)
         preds = (out > 0.0).float().cpu().numpy()
@@ -274,18 +321,20 @@ fpr_05 = fpr_pred[thresholds_pred == 1]
 tpr_05 = tpr_pred[thresholds_pred == 1]
 roc_auc = auc(fpr, tpr)
 fig, ax = plt.subplots()
-ax.plot(fpr, tpr, label=f'GNN ROC curve (area = {roc_auc:.2f})')
+ax.plot(fpr, tpr, label=f'GNN ROC curve (area = {roc_auc:.4f})')
 ax.plot(fpr_05, tpr_05, 'ro', label='Threshold = 0.5')
 ax.plot(np.logspace(-5, 0, 100), np.logspace(-5, 0, 100), 'k--')
 ax.set_xlabel('False Positive Rate')
 ax.set_ylabel('True Positive Rate')
+ax.set_xscale('log')
+ax.set_xlim(1e-5, 1)
 ax.legend()
 plt.savefig(f"{cwd}/plots/training/roc_curve_gnn.png")
 
 # Draw the first five clusters from each dataset
 #for i in range(5):
-#    dataset_photon_gun.plot_data_3d(i, plot_dir=f"{cwd}/plots/training/photon_gun", draw_edges=True)
-#    dataset_llp_ctau_1000.plot_data_3d(i, plot_dir=f"{cwd}/plots/training/llp_ctau_1000", draw_edges=True)
+#    dataset_photon_gun_training.plot_data_3d(i, plot_dir=f"{cwd}/plots/photon_gun", draw_edges=True)
+#    dataset_llp_ctau_1000_training.plot_data_3d(i, plot_dir=f"{cwd}/plots/llp_ctau_1000", draw_edges=True)
 
 end = time.time()
 print(f"Code executed in {end - start:.2f} seconds")
