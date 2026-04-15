@@ -60,6 +60,7 @@ weights_llp = weights_llp[alpha_cut]
 weights_photon_gun = weights_photon_gun / ak.sum(weights_photon_gun)
 weights_llp = weights_llp / ak.sum(weights_llp)
 
+################### Reweight LLP to Photon gun #################
 ## Reweight LLP to photon gun (BDT)
 kinematics_photon_gun = ak.to_dataframe(
     ak.zip(
@@ -95,6 +96,7 @@ weights_llp_bdt = weights_llp_bdt / np.sum(weights_llp_bdt)
 counts_photon_gun, bins_e, bins_eta = np.histogram2d(cl3d_photon_gun.energy, cl3d_photon_gun.eta, bins=[30, 30], range=[[0, 1000], [-3.2, 3.2]], weights=weights_photon_gun)
 counts_llp, _, _ = np.histogram2d(cl3d_llp.energy, cl3d_llp.eta, bins=[30, 30], range=[[0, 1000], [-3.2, 3.2]], weights=weights_llp)
 weights_llp_histogram = ak.zeros_like(weights_llp)
+
 for i in range(len(bins_e) - 1):
     x_low = bins_e[i]
     x_high = bins_e[i+1]
@@ -117,6 +119,8 @@ weights_llp_histogram = weights_llp_histogram / np.sum(weights_llp_histogram)
 ## Plot the cluster variables
 #plotvars = ["id", "pt", "energy", "eta", "phi", "hoe", "meanz", "rho_roverz_z", "rho_roverz_z_eweight", "rho_phi_z", "rho_phi_z_eweight", "rho_roverz_phi", "rho_roverz_phi_eweight"]
 plotvars = ["pt", "energy", "eta", "phi", "hoe", "meanz", "clusters_n", "showerlength", "coreshowerlength", "firstlayer", "maxlayer", "seetot", "seemax", "spptot", "sppmax", "szz", "srrtot", "srrmax", "srrmean", "varrr", "varzz", "varee", "varpp", "emaxe", "layer10", "layer50", "layer90", "first1layers", "first3layers", "first5layers", "emax1layers", "emax3layers", "emax5layers", "ntc67", "ntc90", "rho_roverz_z", "rho_roverz_z_eweight", "rho_phi_z", "rho_phi_z_eweight", "rho_roverz_phi", "rho_roverz_phi_eweight"]
+
+print("\nPlotting variables with LLP reweighted to photon gun")
 for field in cl3d_photon_gun.fields:
     if field not in plotvars: continue
 
@@ -141,7 +145,7 @@ for field in cl3d_photon_gun.fields:
     if field in ["energy", "hoe", "meanz"]: 
         ax.set_yscale("log")
     ax.legend()
-    plt.savefig(f"{cwd}/plots/test_reweight/{field}_photon_gun_vs_llp.png")
+    plt.savefig(f"{cwd}/plots/test_reweight/{field}_photon_gun_vs_llp_rwgt_to_photon.png")
     plt.close()
 
     # ROC curve
@@ -156,7 +160,6 @@ for field in cl3d_photon_gun.fields:
     roc_auc = auc(fpr, tpr)
     roc_auc_bdt = auc(fpr_bdt, tpr_bdt)
     roc_auc_histogram = auc(fpr_histogram, tpr_histogram)
-    plt.close()
 
     fig, ax = plt.subplots()
     ax.plot(fpr, tpr, label=f'ROC curve (area = {roc_auc:.2f})')
@@ -169,4 +172,88 @@ for field in cl3d_photon_gun.fields:
     ax.set_ylabel('True Positive Rate')
     ax.set_title(f"ROC curve for {field}")
     ax.legend()
-    plt.savefig(f"{cwd}/plots/test_reweight/roc_curve_{field}.png")
+    plt.savefig(f"{cwd}/plots/test_reweight/roc_curve_{field}_rwgt_to_photon.png")
+    plt.close()
+
+################### Reweight Photon gun to LLP #################
+prob_photon_gun = model.predict_proba(kinematics_photon_gun)
+weights_photon_gun_bdt = np.clip(prob_photon_gun[:, 1], 1e-6, 1-1e-6)/np.clip(prob_photon_gun[:, 0], 1e-6, 1-1e-6)
+weights_photon_gun_bdt = weights_photon_gun_bdt / np.sum(weights_photon_gun_bdt)
+weights_photon_gun_histogram = ak.zeros_like(weights_photon_gun)
+
+counts_photon_gun, bins_e, bins_eta = np.histogram2d(cl3d_photon_gun.energy, cl3d_photon_gun.eta, bins=[30, 30], range=[[0, 1000], [-3.2, 3.2]], weights=weights_photon_gun)
+counts_llp, _, _ = np.histogram2d(cl3d_llp.energy, cl3d_llp.eta, bins=[30, 30], range=[[0, 1000], [-3.2, 3.2]], weights=weights_llp)
+weights_photon_gun_histogram = ak.zeros_like(weights_photon_gun)
+for i in range(len(bins_e) - 1):
+    x_low = bins_e[i]
+    x_high = bins_e[i+1]
+    mask_photon_gun_i = np.logical_and(cl3d_photon_gun.energy >= x_low, cl3d_photon_gun.energy < x_high) 
+    mask_llp_i = np.logical_and(cl3d_llp.energy >= x_low, cl3d_llp.energy < x_high) 
+
+    for j in range(len(bins_eta) - 1):
+        y_low = bins_eta[j]
+        y_high = bins_eta[j+1]
+        mask_photon_gun_j = np.logical_and(cl3d_photon_gun.eta >= y_low, cl3d_photon_gun.eta < y_high) 
+        mask_llp_j = np.logical_and(cl3d_llp.eta >= y_low, cl3d_llp.eta < y_high) 
+
+        mask_photon_gun = np.logical_and(mask_photon_gun_i, mask_photon_gun_j)
+        mask_llp = np.logical_and(mask_llp_i, mask_llp_j)
+
+        if (len(cl3d_photon_gun[mask_photon_gun]) > 0) and (counts_photon_gun[i][j] > 0):
+            weights_photon_gun_histogram = weights_photon_gun_histogram + (mask_photon_gun * counts_llp[i][j]/counts_photon_gun[i][j])
+weights_photon_gun_histogram = weights_photon_gun_histogram / np.sum(weights_photon_gun_histogram)
+
+print("\nPlotting variables with Photon gun reweighted to LLP")
+for field in cl3d_photon_gun.fields:
+    if field not in plotvars: continue
+
+    print(f"Plotting cluster {field}")
+    # Bin edges are estimated using an unweighted sample
+    #_, bins = np.histogram(cl3d_photon_gun[field], bins="auto")
+    _, bins = np.histogram(cl3d_llp[field], bins="auto")
+    bins = np.linspace(bins[0], bins[-1], 30)
+    counts_photon_gun, _ = np.histogram(cl3d_photon_gun[field], bins=bins, weights=weights_photon_gun)
+    counts_photon_gun_rwgt_bdt, _ = np.histogram(cl3d_photon_gun[field], bins=bins, weights=weights_photon_gun_bdt)
+    counts_photon_gun_rwgt_histogram, _ = np.histogram(cl3d_photon_gun[field], bins=bins, weights=weights_photon_gun_histogram)
+    counts_llp, _ = np.histogram(cl3d_llp[field], bins=bins, weights=weights_llp)
+
+    fig, ax = plt.subplots()
+    hep.histplot(counts_photon_gun, bins=bins, ax=ax, histtype="step", color="skyblue", label="Photon gun", flow=None)
+    hep.histplot(counts_photon_gun_rwgt_bdt, bins=bins, ax=ax, histtype="step", color="skyblue", ls="--", label="Photon gun (BDT to LLP)", flow=None)
+    hep.histplot(counts_photon_gun_rwgt_histogram, bins=bins, ax=ax, histtype="step", color="skyblue", ls=":", label="Photon gun (Histo to LLP)", flow=None)
+    hep.histplot(counts_llp, bins=bins, ax=ax, histtype="step", color="firebrick", label="LLP", flow=None)
+    ax.set_xlabel(f"Cluster {field}")
+    ax.set_ylabel("Normalized counts")
+    # Log scale variables
+    if field in ["energy", "hoe", "meanz"]: 
+        ax.set_yscale("log")
+    ax.legend()
+    plt.savefig(f"{cwd}/plots/test_reweight/{field}_photon_gun_vs_llp_rwgt_to_llp.png")
+    plt.close()
+
+    # ROC curve
+    x = np.concatenate([ak.to_numpy(cl3d_photon_gun[field]), ak.to_numpy(cl3d_llp[field])])
+    y = np.concatenate([ak.to_numpy(class_label_photon_gun), ak.to_numpy(class_label_llp)])
+    w = np.concatenate([ak.to_numpy(weights_photon_gun), ak.to_numpy(weights_llp)])
+    w_bdt = np.concatenate([ak.to_numpy(weights_photon_gun_bdt), ak.to_numpy(weights_llp)])
+    w_histogram = np.concatenate([ak.to_numpy(weights_photon_gun_histogram), ak.to_numpy(weights_llp)])
+    fpr, tpr, thresholds = roc_curve(y, x, sample_weight=w)
+    fpr_bdt, tpr_bdt, thresholds_bdt = roc_curve(y, x, sample_weight=w_bdt)
+    fpr_histogram, tpr_histogram, thresholds_histogram = roc_curve(y, x, sample_weight=w_histogram)
+    roc_auc = auc(fpr, tpr)
+    roc_auc_bdt = auc(fpr_bdt, tpr_bdt)
+    roc_auc_histogram = auc(fpr_histogram, tpr_histogram)
+
+    fig, ax = plt.subplots()
+    ax.plot(fpr, tpr, label=f'ROC curve (area = {roc_auc:.2f})')
+    ax.plot(fpr_bdt, tpr_bdt, ls="--", label=f'ROC curve BDT rgwt (area = {roc_auc_bdt:.2f})')
+    ax.plot(fpr_histogram, tpr_histogram, ls=":", label=f'ROC curve Histogram rgwt (area = {roc_auc_histogram:.2f})')
+    ax.plot(np.logspace(-5, 0, 100), np.logspace(-5, 0, 100), 'k--')
+    ax.set_xlim(1e-5, 1)
+    ax.set_xscale('log')
+    ax.set_xlabel('False Positive Rate')
+    ax.set_ylabel('True Positive Rate')
+    ax.set_title(f"ROC curve for {field}")
+    ax.legend()
+    plt.savefig(f"{cwd}/plots/test_reweight/roc_curve_{field}_rwgt_to_llp.png")
+    plt.close()
